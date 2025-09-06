@@ -3,6 +3,7 @@ from supabase import create_client, Client
 from werkzeug.utils import secure_filename
 import os
 from dotenv import load_dotenv
+from decimal import Decimal
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key'
@@ -20,10 +21,8 @@ def inject_supabase_and_user():
     current_user = None
     if 'user_id' in session:
         try:
-            # Set session for authenticated requests
             if 'access_token' in session and 'refresh_token' in session:
                 supabase.auth.set_session(session['access_token'], session['refresh_token'])
-            # Fetch user data from profiles table
             user_data = supabase.table('profiles').select('username, email, image').eq('id', session['user_id']).single().execute().data
             current_user = {
                 'id': session['user_id'],
@@ -34,7 +33,6 @@ def inject_supabase_and_user():
             }
         except Exception as e:
             print(f"Error fetching user data: {str(e)}")
-            # Clear session to prevent stale data
             session.pop('user_id', None)
             session.pop('access_token', None)
             session.pop('refresh_token', None)
@@ -53,31 +51,25 @@ def register():
         username = request.form['username']
         
         try:
-            # Register user with Supabase Auth
             response = supabase.auth.sign_up({
                 'email': email,
                 'password': password
             })
             user = response.user
-            
-            # Sign in the user to set the session for RLS
             sign_in_response = supabase.auth.sign_in_with_password({
                 'email': email,
                 'password': password
             })
-            
-            # Create profile in public.profiles
             supabase.table('profiles').insert({
                 'id': user.id,
                 'username': username,
                 'email': email,
                 'image': 'user_image.jpg'
             }).execute()
-            
-            # Set session for Flask
             session['user_id'] = user.id
             session['access_token'] = sign_in_response.session.access_token
             session['refresh_token'] = sign_in_response.session.refresh_token
+            print(f"Register successful, user_id: {user.id}, access_token: {sign_in_response.session.access_token[:10]}...")
             flash('Registration successful!')
             return redirect(url_for('dashboard'))
         except Exception as e:
@@ -98,10 +90,10 @@ def login():
                 'password': password
             })
             user = response.user
-            # Store access and refresh tokens for authenticated requests
             session['user_id'] = user.id
             session['access_token'] = response.session.access_token
             session['refresh_token'] = response.session.refresh_token
+            print(f"Login successful, user_id: {user.id}, access_token: {response.session.access_token[:10]}...")
             flash('Login successful!')
             return redirect(url_for('dashboard'))
         except Exception as e:
@@ -123,7 +115,6 @@ def dashboard():
         return redirect(url_for('login'))
     
     try:
-        # Set session for authenticated requests
         if 'access_token' in session and 'refresh_token' in session:
             supabase.auth.set_session(session['access_token'], session['refresh_token'])
         user_data = supabase.table('profiles').select('*').eq('id', session['user_id']).single().execute().data
@@ -139,7 +130,6 @@ def profile():
         return redirect(url_for('login'))
     
     try:
-        # Set session for authenticated requests
         if 'access_token' in session and 'refresh_token' in session:
             supabase.auth.set_session(session['access_token'], session['refresh_token'])
         user_data = supabase.table('profiles').select('*').eq('id', session['user_id']).single().execute().data
@@ -153,10 +143,7 @@ def profile():
         new_password = request.form.get('new_password')
         confirm_password = request.form.get('confirm_password')
         
-        # Update profile
         update_data = {'username': username, 'email': email}
-        
-        # Handle profile image upload
         if 'image' in request.files:
             file = request.files['image']
             if file and allowed_file(file.filename):
@@ -167,7 +154,6 @@ def profile():
             elif file.filename:
                 flash('Invalid file type. Please upload PNG, JPG, or JPEG.')
         
-        # Handle password update
         if new_password or confirm_password:
             if new_password != confirm_password:
                 flash('Passwords do not match.')
@@ -179,7 +165,6 @@ def profile():
                 supabase.auth.set_session(session['access_token'], session['refresh_token'])
                 supabase.auth.update_user({'password': new_password})
                 flash('Password updated successfully.')
-                # Refresh session tokens after password update
                 sign_in_response = supabase.auth.sign_in_with_password({
                     'email': email,
                     'password': new_password
@@ -217,39 +202,80 @@ def new_product():
             return redirect(url_for('new_product'))
         
         try:
-            # Set session for authenticated requests
             if 'access_token' not in session or 'refresh_token' not in session:
                 flash('Session expired. Please log in again.')
                 return redirect(url_for('login'))
             
-            supabase.auth.set_session(session['access_token'], session['refresh_token'])
+            # Refresh session
+            try:
+                supabase.auth.set_session(session['access_token'], session['refresh_token'])
+                current_session = supabase.auth.get_session()
+                if not current_session.user:
+                    print("Session invalid, attempting to refresh...")
+                    supabase.auth.refresh_session()
+                    session['access_token'] = supabase.auth.get_session().access_token
+                    session['refresh_token'] = supabase.auth.get_session().refresh_token
+                    current_session = supabase.auth.get_session()
+            except Exception as e:
+                print(f"Token refresh failed: {str(e)}")
+                flash('Session expired. Please log in again.')
+                return redirect(url_for('login'))
             
-            # Debug: Verify the authenticated user ID
-            current_session = supabase.auth.get_session()
-            print(f"Current session user ID: {current_session.user.id if current_session.user else 'None'}")
+            # Debug: Verify authentication
+            current_user_id = current_session.user.id if current_session.user else None
+            auth_user_id = supabase.auth.get_user().user.id if supabase.auth.get_user().user else None
+            print(f"Current session user ID: {current_user_id}")
+            print(f"Supabase auth user ID: {auth_user_id}")
             print(f"Session user_id: {session['user_id']}")
+            print(f"Access token: {session.get('access_token')[:10]}...")
+            
+            # Validate inputs
+            if not request.form['title'].strip():
+                flash('Title is required.')
+                return redirect(url_for('new_product'))
+            if request.form['category'] not in categories:
+                flash('Invalid category.')
+                return redirect(url_for('new_product'))
+            try:
+                price = Decimal(str(request.form['price']))
+                if price <= 0:
+                    flash('Price must be greater than 0.')
+                    return redirect(url_for('new_product'))
+            except ValueError:
+                flash('Invalid price format.')
+                return redirect(url_for('new_product'))
             
             # Create product
             product_data = {
                 'title': request.form['title'],
                 'description': request.form['description'],
                 'category': request.form['category'],
-                'price': float(request.form['price']),
-                'user_id': session['user_id']
+                'price': price,
+                'user_id': str(session['user_id'])
             }
             print(f"Inserting product data: {product_data}")
             product_response = supabase.table('products').insert(product_data).execute()
+            print(f"Product insert response: {product_response}")
             product_id = product_response.data[0]['id']
             
-            # Upload images to Supabase Storage
+            # Upload images
             for file in valid_files:
                 filename = secure_filename(file.filename)
                 file_content = file.read()
-                supabase.storage.from_('product-images').upload(f'{product_id}/{filename}', file_content)
-                supabase.table('product_images').insert({
-                    'product_id': product_id,
-                    'image_path': f'{product_id}/{filename}'
-                }).execute()
+                try:
+                    print(f"Uploading image: {product_id}/{filename}")
+                    storage_response = supabase.storage.from_('product-images').upload(f'{product_id}/{filename}', file_content)
+                    print(f"Storage upload response: {storage_response}")
+                    image_data = {
+                        'product_id': product_id,
+                        'image_path': f'{product_id}/{filename}'
+                    }
+                    print(f"Inserting image data: {image_data}")
+                    image_response = supabase.table('product_images').insert(image_data).execute()
+                    print(f"Image insert response: {image_response}")
+                except Exception as img_error:
+                    print(f"Error uploading or inserting image {filename}: {str(img_error)}")
+                    raise img_error
             
             flash('Product listed successfully')
             return redirect(url_for('dashboard'))
@@ -266,7 +292,6 @@ def edit_product(id):
         return redirect(url_for('login'))
     
     try:
-        # Set session for authenticated requests
         if 'access_token' in session and 'refresh_token' in session:
             supabase.auth.set_session(session['access_token'], session['refresh_token'])
         product = supabase.table('products').select('*, product_images(image_path)').eq('id', id).single().execute().data
@@ -280,21 +305,33 @@ def edit_product(id):
     categories = ['Electronics', 'Clothing', 'Furniture', 'Books', 'Other']
     if request.method == 'POST':
         try:
-            # Update product
+            if not request.form['title'].strip():
+                flash('Title is required.')
+                return redirect(url_for('edit_product', id=id))
+            if request.form['category'] not in categories:
+                flash('Invalid category.')
+                return redirect(url_for('edit_product', id=id))
+            try:
+                price = Decimal(str(request.form['price']))
+                if price <= 0:
+                    flash('Price must be greater than 0.')
+                    return redirect(url_for('edit_product', id=id))
+            except ValueError:
+                flash('Invalid price format.')
+                return redirect(url_for('edit_product', id=id))
+            
             supabase.table('products').update({
                 'title': request.form['title'],
                 'description': request.form['description'],
                 'category': request.form['category'],
-                'price': float(request.form['price'])
+                'price': price
             }).eq('id', id).execute()
             
-            # Handle image deletions
             delete_images = request.form.getlist('delete_images')
             for image_path in delete_images:
                 supabase.storage.from_('product-images').remove([image_path])
                 supabase.table('product_images').delete().eq('image_path', image_path).execute()
             
-            # Handle new image uploads
             files = request.files.getlist('images')
             valid_files = [f for f in files if f and allowed_file(f.filename)]
             current_image_count = len(product['product_images']) - len(delete_images)
@@ -329,7 +366,6 @@ def delete_product(id):
         return redirect(url_for('login'))
     
     try:
-        # Set session for authenticated requests
         if 'access_token' in session and 'refresh_token' in session:
             supabase.auth.set_session(session['access_token'], session['refresh_token'])
         product = supabase.table('products').select('*, product_images(image_path)').eq('id', id).single().execute().data
@@ -337,11 +373,9 @@ def delete_product(id):
             flash('Unauthorized')
             return redirect(url_for('dashboard'))
         
-        # Delete images from storage
         for image in product['product_images']:
             supabase.storage.from_('product-images').remove([image['image_path']])
         
-        # Delete product (cascades to product_images)
         supabase.table('products').delete().eq('id', id).execute()
         flash('Product deleted successfully')
         return redirect(url_for('dashboard'))
@@ -354,23 +388,35 @@ def browse_products():
     category = request.args.get('category')
     search = request.args.get('search')
     
-    query = supabase.table('products').select('*, product_images(image_path)')
-    if category:
-        query = query.eq('category', category)
-    if search:
-        query = query.ilike('title', f'%{search}%')
-    
     try:
+        # Debug: Verify authentication status
+        if 'access_token' in session and 'refresh_token' in session:
+            supabase.auth.set_session(session['access_token'], session['refresh_token'])
+            current_user_id = supabase.auth.get_session().user.id if supabase.auth.get_session().user else None
+            print(f"Current user ID: {current_user_id}")
+        else:
+            print("No authenticated user (public access)")
+        
+        query = supabase.table('products').select('*, product_images(image_path)')
+        if category:
+            query = query.eq('category', category)
+        if search:
+            query = query.ilike('title', f'%{search}%')
+        
         products = query.execute().data
+        print(f"Fetched products: {products}")
         categories = ['Electronics', 'Clothing', 'Furniture', 'Books', 'Other']
         return render_template('browse_products.html', products=products, categories=categories)
     except Exception as e:
+        print(f"Error in browse_products: {str(e)}")
         flash(f'Error loading products: {str(e)}')
         return redirect(url_for('index'))
 
 @app.route('/products/<int:id>')
 def product_detail(id):
     try:
+        if 'access_token' in session and 'refresh_token' in session:
+            supabase.auth.set_session(session['access_token'], session['refresh_token'])
         product = supabase.table('products').select('*, product_images(image_path)').eq('id', id).single().execute().data
         if not product:
             flash('Product not found')
@@ -386,7 +432,6 @@ def purchases():
         return redirect(url_for('login'))
     
     try:
-        # Set session for authenticated requests
         if 'access_token' in session and 'refresh_token' in session:
             supabase.auth.set_session(session['access_token'], session['refresh_token'])
         purchases = supabase.table('purchases').select('*, product:products(*, product_images(image_path))').eq('user_id', session['user_id']).execute().data
@@ -401,7 +446,6 @@ def cart():
         return redirect(url_for('login'))
     
     try:
-        # Set session for authenticated requests
         if 'access_token' in session and 'refresh_token' in session:
             supabase.auth.set_session(session['access_token'], session['refresh_token'])
         cart_items = supabase.table('cart').select('*, product:products(*, product_images(image_path))').eq('user_id', session['user_id']).execute().data
@@ -416,11 +460,10 @@ def add_to_cart(product_id):
         return redirect(url_for('login'))
     
     try:
-        # Set session for authenticated requests
         if 'access_token' in session and 'refresh_token' in session:
             supabase.auth.set_session(session['access_token'], session['refresh_token'])
         supabase.table('cart').insert({
-            'user_id': session['user_id'],
+            'user_id': str(session['user_id']),
             'product_id': product_id
         }).execute()
         flash('Product added to cart')
@@ -435,7 +478,6 @@ def remove_from_cart(id):
         return redirect(url_for('login'))
     
     try:
-        # Set session for authenticated requests
         if 'access_token' in session and 'refresh_token' in session:
             supabase.auth.set_session(session['access_token'], session['refresh_token'])
         cart_item = supabase.table('cart').select('*').eq('id', id).single().execute().data
@@ -456,11 +498,10 @@ def purchase_product(product_id):
         return redirect(url_for('login'))
     
     try:
-        # Set session for authenticated requests
         if 'access_token' in session and 'refresh_token' in session:
             supabase.auth.set_session(session['access_token'], session['refresh_token'])
         supabase.table('purchases').insert({
-            'user_id': session['user_id'],
+            'user_id': str(session['user_id']),
             'product_id': product_id
         }).execute()
         flash('Product purchased successfully')
