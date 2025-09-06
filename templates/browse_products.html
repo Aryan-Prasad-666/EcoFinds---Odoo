@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Browse Products{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold mb-4">Browse Products</h1>
+    <div class="mb-4 flex">
+        <form method="GET" class="flex w-full">
+            <select name="category" class="p-2 border rounded mr-2">
+                <option value="">All Categories</option>
+                {% for category in categories %}
+                    <option value="{{ category }}">{{ category }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="search" placeholder="Search by title..." class="p-2 border rounded flex-grow">
+            <button type="submit" class="bg-green-600 text-white p-2 rounded ml-2 hover:bg-green-700 transition">Search</button>
+        </form>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {% for product in products %}
+            <div class="bg-white p-4 rounded-lg shadow-md">
+                {% if product.images %}
+                    <img src="{{ url_for('static', filename=product.images[0].image_path) }}" alt="Product Image" class="w-full h-40 object-cover mb-2 rounded">
+                {% else %}
+                    <img src="{{ url_for('static', filename='uploads/products/placeholder.jpg') }}" alt="Placeholder" class="w-full h-40 object-cover mb-2 rounded">
+                {% endif %}
+                <h3 class="text-lg font-bold">{{ product.title }}</h3>
+                <p class="text-gray-600">${{ product.price }}</p>
+                <p class="text-gray-600">{{ product.category }}</p>
+                <a href="{{ url_for('product_detail', id=product.id) }}" class="text-blue-600 hover:underline">View Details</a>
+                <form action="{{ url_for('add_to_cart', product_id=product.id) }}" method="POST" class="inline">
+                    <button type="submit" class="text-green-600 hover:underline">Add to Cart</button>
+                </form>
+            </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoFinds - {% block title %}{% endblock %}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Montserrat', sans-serif;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .content-wrapper {
+            flex: 1 0 auto;
+        }
+        footer {
+            flex-shrink: 0;
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="bg-gray-50 text-gray-800">
+    <!-- Navigation -->
+    <nav class="bg-green-700 p-4 shadow-md">
+        <div class="container mx-auto flex justify-between items-center">
+            <a href="{{ url_for('dashboard') }}" class="text-white text-2xl font-bold">EcoFinds</a>
+            <div class="flex items-center space-x-6">
+                {% if session.user_id %}
+                    <span class="text-white font-medium">Welcome, {{ session.username }}</span>
+                    <a href="{{ url_for('dashboard') }}" class="text-white hover:text-green-200 transition">Dashboard</a>
+                    <a href="{{ url_for('browse_products') }}" class="text-white hover:text-green-200 transition">Browse</a>
+                    <a href="{{ url_for('cart') }}" class="text-white hover:text-green-200 transition">Cart</a>
+                    <a href="{{ url_for('purchases') }}" class="text-white hover:text-green-200 transition">Purchases</a>
+                    <a href="{{ url_for('logout') }}" class="text-white hover:text-green-200 transition">Logout</a>
+                {% else %}
+                    <a href="{{ url_for('login') }}" class="text-white hover:text-green-200 transition">Login</a>
+                    <a href="{{ url_for('register') }}" class="text-white hover:text-green-200 transition">Register</a>
+                {% endif %}
+                <div class="relative">
+                    <select class="bg-green-600 text-white p-2 rounded-md hover:bg-green-500 transition">
+                        <option value="en">English</option>
+                        <option value="hi">हिंदी (Hindi)</option>
+                        <option value="kn">ಕನ್ನಡ (Kannada)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="content-wrapper container mx-auto p-4">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded mb-4">
+                    {% for message in messages %}
+                        <p>{{ message }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white py-8">
+        <div class="container mx-auto grid grid-cols-1 md:grid-cols-4 gap-8">
+            <!-- Brand -->
+            <div>
+                <h3 class="text-xl font-bold mb-4">EcoFinds</h3>
+                <p class="text-gray-300">
+                    Empowering sustainable consumption through a trusted second-hand marketplace, fostering a circular economy and responsible choices.
+                </p>
+                <div class="mt-4 flex space-x-4">
+                    <a href="#" class="text-gray-300 hover:text-white transition">📱</a>
+                    <a href="#" class="text-gray-300 hover:text-white transition">📧</a>
+                    <a href="#" class="text-gray-300 hover:text-white transition">🌐</a>
+                </div>
+            </div>
+
+            <!-- Services -->
+            <div>
+                <h3 class="text-lg font-semibold mb-4">Services</h3>
+                <ul class="space-y-2">
+                    <li><a href="{{ url_for('browse_products') }}" class="text-gray-300 hover:text-white transition">Browse Products</a></li>
+                    <li><a href="{{ url_for('new_product') }}" class="text-gray-300 hover:text-white transition">List a Product</a></li>
+                    <li><a href="{{ url_for('cart') }}" class="text-gray-300 hover:text-white transition">Cart</a></li>
+                    <li><a href="{{ url_for('purchases') }}" class="text-gray-300 hover:text-white transition">Purchase History</a></li>
+                </ul>
+            </div>
+
+            <!-- Company -->
+            <div>
+                <h3 class="text-lg font-semibold mb-4">Company</h3>
+                <ul class="space-y-2">
+                    <li><a href="#" class="text-gray-300 hover:text-white transition">About Us</a></li>
+                    <li><a href="#" class="text-gray-300 hover:text-white transition">Our Mission</a></li>
+                    <li><a href="#" class="text-gray-300 hover:text-white transition">Community Impact</a></li>
+                </ul>
+            </div>
+
+            <!-- Contact -->
+            <div>
+                <h3 class="text-lg font-semibold mb-4">Contact Us</h3>
+                <p class="text-gray-300">123 Sustainable Hub, Bengaluru, Karnataka, India</p>
+                <p class="text-gray-300">+91 9876543210</p>
+                <p class="text-gray-300">support@ecofinds.ai</p>
+                <div class="mt-4">
+                    <select class="bg-gray-700 text-white p-2 rounded-md hover:bg-gray-600 transition">
+                        <option value="en">English</option>
+                        <option value="hi">हिंदी (Hindi)</option>
+                        <option value="kn">ಕನ್ನಡ (Kannada)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="container mx-auto mt-8 border-t border-gray-700 pt-4 text-center">
+            <p class="text-gray-300">&copy; 2025 EcoFinds. All rights reserved.</p>
+            <div class="mt-2">
+                <a href="#" class="text-gray-300 hover:text-white transition mx-2">Privacy Policy</a>
+                <a href="#" class="text-gray-300 hover:text-white transition mx-2">Terms of Service</a>
+            </div>
+        </div>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

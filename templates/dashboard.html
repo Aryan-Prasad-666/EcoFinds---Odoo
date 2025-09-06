@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="flex items-center mb-6">
+        {% if user.image %}
+            <img src="{{ url_for('static', filename=user.image) }}" alt="Profile Image" class="w-16 h-16 object-cover rounded-full mr-4">
+        {% else %}
+            <div class="w-16 h-16 bg-gray-300 rounded-full mr-4 flex items-center justify-center text-gray-600">No Image</div>
+        {% endif %}
+        <div>
+            <h1 class="text-2xl font-bold">Welcome, {{ user.username }}</h1>
+            <p class="text-gray-600">{{ user.email }}</p>
+        </div>
+    </div>
+    <div class="mb-4">
+        <a href="{{ url_for('new_product') }}" class="bg-green-600 text-white p-2 rounded hover:bg-green-700 transition">List New Product</a>
+        <a href="{{ url_for('profile') }}" class="bg-blue-600 text-white p-2 rounded ml-2 hover:bg-blue-700 transition">Edit Profile</a>
+    </div>
+    <h2 class="text-xl font-bold mb-2">Your Listings</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {% for product in user.products %}
+            <div class="bg-white p-4 rounded-lg shadow-md">
+                <img src="{{ url_for('static', filename=product.image) }}" alt="Placeholder" class="w-full h-40 object-cover mb-2">
+                <h3 class="text-lg font-bold">{{ product.title }}</h3>
+                <p class="text-gray-600">${{ product.price }}</p>
+                <p class="text-gray-600">{{ product.category }}</p>
+                <a href="{{ url_for('edit_product', id=product.id) }}" class="text-blue-600 hover:underline">Edit</a>
+                <form action="{{ url_for('delete_product', id=product.id) }}" method="POST" class="inline">
+                    <button type="submit" class="text-red-600 hover:underline">Delete</button>
+                </form>
+            </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
