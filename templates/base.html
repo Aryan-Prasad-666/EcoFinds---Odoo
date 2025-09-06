@@ -29,8 +29,8 @@
         <div class="container mx-auto flex justify-between items-center">
             <a href="{{ url_for('dashboard') }}" class="text-white text-2xl font-bold">EcoFinds</a>
             <div class="flex items-center space-x-6">
-                {% if session.user_id %}
-                    <span class="text-white font-medium">Welcome, {{ session.username }}</span>
+                {% if current_user and current_user.is_authenticated %}
+                    <span class="text-white font-medium">Welcome, {{ current_user.username }}</span>
                     <a href="{{ url_for('dashboard') }}" class="text-white hover:text-green-200 transition">Dashboard</a>
                     <a href="{{ url_for('browse_products') }}" class="text-white hover:text-green-200 transition">Browse</a>
                     <a href="{{ url_for('cart') }}" class="text-white hover:text-green-200 transition">Cart</a>

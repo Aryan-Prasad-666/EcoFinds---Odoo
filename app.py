@@ -14,10 +14,25 @@ supabase: Client = create_client(supabase_url, supabase_key)
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg'}
 
-# Inject supabase client into Jinja2 templates
+# Inject supabase client and current user into Jinja2 templates
 @app.context_processor
-def inject_supabase():
-    return dict(supabase=supabase)
+def inject_supabase_and_user():
+    current_user = None
+    if 'user_id' in session:
+        try:
+            # Fetch user data from profiles table
+            user_data = supabase.table('profiles').select('username, email, image').eq('id', session['user_id']).single().execute().data
+            current_user = {
+                'id': session['user_id'],
+                'username': user_data['username'],
+                'email': user_data['email'],
+                'image': user_data['image'],
+                'is_authenticated': True
+            }
+        except Exception:
+            # If user data fetch fails, clear session to prevent stale data
+            session.pop('user_id', None)
+    return dict(supabase=supabase, current_user=current_user)
 
 # Routes
 @app.route('/')
@@ -55,7 +70,6 @@ def register():
             
             # Set session for Flask
             session['user_id'] = user.id
-            session['username'] = username
             flash('Registration successful!')
             return redirect(url_for('dashboard'))
         except Exception as e:
@@ -75,8 +89,11 @@ def login():
                 'email': email,
                 'password': password
             })
-            session['user_id'] = response.user.id
-            session['username'] = response.user.user_metadata.get('username', '')
+            user = response.user
+            # Fetch username from profiles table
+            user_data = supabase.table('profiles').select('username').eq('id', user.id).single().execute().data
+            session['user_id'] = user.id
+            flash('Login successful!')
             return redirect(url_for('dashboard'))
         except Exception as e:
             flash('Invalid email or password')
@@ -87,7 +104,6 @@ def login():
 def logout():
     supabase.auth.sign_out()
     session.pop('user_id', None)
-    session.pop('username', None)
     return redirect(url_for('login'))
 
 @app.route('/dashboard')
@@ -124,7 +140,6 @@ def profile():
                 flash('Invalid file type. Please upload PNG, JPG, or JPEG.')
         
         supabase.table('profiles').update(update_data).eq('id', session['user_id']).execute()
-        session['username'] = username
         flash('Profile updated successfully')
         return redirect(url_for('dashboard'))
     
