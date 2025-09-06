@@ -8,7 +8,7 @@
         <div class="border p-4">
           <h2 class="text-xl font-semibold">{{ item.product.title }}</h2>
           <p>{{ item.product.description }}</p>
-          <p>Price: ${{ item.product.price }}</p>
+          <p>Price: ₹{{ item.product.price }}</p>
           {% if item.product.product_images %}
             {% for image in item.product.product_images %}
               <img src="{{ supabase.storage.from_('product-images').get_public_url(image.image_path) }}" alt="{{ item.product.title }}" class="w-full h-48 object-cover">

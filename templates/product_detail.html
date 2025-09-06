@@ -14,7 +14,7 @@
             <img src="{{ supabase.storage.from_('product-images').get_public_url('placeholder.jpg') }}" alt="Placeholder" class="w-full h-64 object-cover rounded mb-4">
         {% endif %}
     </div>
-    <p class="text-gray-600 mb-2">Price: ${{ product.price }}</p>
+    <p class="text-gray-600 mb-2">Price: ₹{{ product.price }}</p>
     <p class="text-gray-600 mb-2">Category: {{ product.category }}</p>
     <p class="text-gray-600 mb-4">{{ product.description }}</p>
     <form action="{{ url_for('purchase_product', product_id=product.id) }}" method="POST">

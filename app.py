@@ -15,7 +15,6 @@ supabase: Client = create_client(supabase_url, supabase_key)
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg'}
 
-# Inject supabase client and current user into Jinja2 templates
 @app.context_processor
 def inject_supabase_and_user():
     current_user = None
@@ -38,7 +37,6 @@ def inject_supabase_and_user():
             session.pop('refresh_token', None)
     return dict(supabase=supabase, current_user=current_user)
 
-# Routes (only modified routes shown)
 @app.route('/products/new', methods=['GET', 'POST'])
 def new_product():
     if 'user_id' not in session:
@@ -97,12 +95,11 @@ def new_product():
                 flash('Invalid price format.')
                 return redirect(url_for('new_product'))
             
-            # Convert Decimal to string for JSON serialization
             product_data = {
                 'title': request.form['title'],
                 'description': request.form['description'],
                 'category': request.form['category'],
-                'price': str(price),  # Convert Decimal to string
+                'price': str(price), 
                 'user_id': str(session['user_id'])
             }
             print(f"Inserting product data: {product_data}")
@@ -171,12 +168,11 @@ def edit_product(id):
                 flash('Invalid price format.')
                 return redirect(url_for('edit_product', id=id))
             
-            # Convert Decimal to string for JSON serialization
             supabase.table('products').update({
                 'title': request.form['title'],
                 'description': request.form['description'],
                 'category': request.form['category'],
-                'price': str(price)  # Convert Decimal to string
+                'price': str(price)  
             }).eq('id', id).execute()
             
             delete_images = request.form.getlist('delete_images')
@@ -212,7 +208,6 @@ def edit_product(id):
     
     return render_template('edit_product.html', product=product, categories=categories)
 
-# Other routes remain unchanged
 @app.route('/')
 def index():
     return redirect(url_for('login'))
