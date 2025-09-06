@@ -32,6 +32,8 @@ def inject_supabase_and_user():
         except Exception:
             # If user data fetch fails, clear session to prevent stale data
             session.pop('user_id', None)
+            session.pop('access_token', None)
+            session.pop('refresh_token', None)
     return dict(supabase=supabase, current_user=current_user)
 
 # Routes
@@ -55,7 +57,7 @@ def register():
             user = response.user
             
             # Sign in the user to set the session for RLS
-            supabase.auth.sign_in_with_password({
+            sign_in_response = supabase.auth.sign_in_with_password({
                 'email': email,
                 'password': password
             })
@@ -70,6 +72,8 @@ def register():
             
             # Set session for Flask
             session['user_id'] = user.id
+            session['access_token'] = sign_in_response.session.access_token
+            session['refresh_token'] = sign_in_response.session.refresh_token
             flash('Registration successful!')
             return redirect(url_for('dashboard'))
         except Exception as e:
@@ -90,9 +94,10 @@ def login():
                 'password': password
             })
             user = response.user
-            # Fetch username from profiles table
-            user_data = supabase.table('profiles').select('username').eq('id', user.id).single().execute().data
+            # Store access and refresh tokens for password updates
             session['user_id'] = user.id
+            session['access_token'] = response.session.access_token
+            session['refresh_token'] = response.session.refresh_token
             flash('Login successful!')
             return redirect(url_for('dashboard'))
         except Exception as e:
@@ -104,6 +109,8 @@ def login():
 def logout():
     supabase.auth.sign_out()
     session.pop('user_id', None)
+    session.pop('access_token', None)
+    session.pop('refresh_token', None)
     return redirect(url_for('login'))
 
 @app.route('/dashboard')
@@ -124,6 +131,8 @@ def profile():
     if request.method == 'POST':
         username = request.form['username']
         email = request.form['email']
+        new_password = request.form.get('new_password')
+        confirm_password = request.form.get('confirm_password')
         
         # Update profile
         update_data = {'username': username, 'email': email}
@@ -139,10 +148,37 @@ def profile():
             elif file.filename:
                 flash('Invalid file type. Please upload PNG, JPG, or JPEG.')
         
-        supabase.table('profiles').update(update_data).eq('id', session['user_id']).execute()
-        flash('Profile updated successfully')
-        return redirect(url_for('dashboard'))
-    
+        # Handle password update
+        if new_password or confirm_password:
+            if new_password != confirm_password:
+                flash('Passwords do not match.')
+                return redirect(url_for('profile'))
+            if len(new_password) < 6:
+                flash('Password must be at least 6 characters.')
+                return redirect(url_for('profile'))
+            try:
+                # Set session with access and refresh tokens for authenticated request
+                supabase.auth.set_session(session['access_token'], session['refresh_token'])
+                supabase.auth.update_user({'password': new_password})
+                flash('Password updated successfully.')
+                # Refresh session tokens after password update
+                sign_in_response = supabase.auth.sign_in_with_password({
+                    'email': email,
+                    'password': new_password
+                })
+                session['access_token'] = sign_in_response.session.access_token
+                session['refresh_token'] = sign_in_response.session.refresh_token
+            except Exception as e:
+                flash(f'Password update failed: {str(e)}')
+                return redirect(url_for('profile'))
+        
+        try:
+            supabase.table('profiles').update(update_data).eq('id', session['user_id']).execute()
+            flash('Profile updated successfully.')
+            return redirect(url_for('dashboard'))
+        except Exception as e:
+            flash(f'Profile update failed: {str(e)}')
+        
     return render_template('profile.html', user=user_data)
 
 @app.route('/products/new', methods=['GET', 'POST'])
