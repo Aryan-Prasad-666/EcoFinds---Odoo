@@ -28,6 +28,13 @@
             <p>No images available</p>
           {% endif %}
           <a href="{{ url_for('product_detail', id=product.id) }}" class="text-blue-500">View Details</a>
+          {% if current_user.is_authenticated %}
+            <form method="POST" action="{{ url_for('add_to_cart', product_id=product.id) }}" class="mt-2">
+              <button type="submit" class="bg-green-500 text-white p-2 rounded">Add to Cart</button>
+            </form>
+          {% else %}
+            <p><a href="{{ url_for('login') }}" class="text-blue-500">Log in to add to cart</a></p>
+          {% endif %}
         </div>
       {% endfor %}
     </div>

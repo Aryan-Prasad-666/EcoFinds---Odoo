@@ -1,23 +1,29 @@
 {% extends "base.html" %}
-{% block title %}Cart{% endblock %}
 {% block content %}
-<div class="max-w-4xl mx-auto">
-    <h1 class="text-2xl font-bold mb-4">Your Cart</h1>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {% for item in cart_items %}
-            <div class="bg-white p-4 rounded-lg shadow-md">
-                {% if item.product.product_images %}
-                    <img src="{{ supabase.storage.from_('product-images').get_public_url(item.product.product_images[0].image_path) }}" alt="Product Image" class="w-full h-40 object-cover mb-2 rounded">
-                {% else %}
-                    <img src="{{ supabase.storage.from_('product-images').get_public_url('placeholder.jpg') }}" alt="Placeholder" class="w-full h-40 object-cover mb-2 rounded">
-                {% endif %}
-                <h3 class="text-lg font-bold">{{ item.product.title }}</h3>
-                <p class="text-gray-600">${{ item.product.price }}</p>
-                <form action="{{ url_for('remove_from_cart', id=item.id) }}" method="POST" class="inline">
-                    <button type="submit" class="text-red-600 hover:underline">Remove</button>
-                </form>
-            </div>
-        {% endfor %}
+<div class="container mx-auto p-4">
+  <h1 class="text-2xl font-bold mb-4">Your Cart</h1>
+  {% if cart_items %}
+    <div class="grid grid-cols-3 gap-4">
+      {% for item in cart_items %}
+        <div class="border p-4">
+          <h2 class="text-xl font-semibold">{{ item.product.title }}</h2>
+          <p>{{ item.product.description }}</p>
+          <p>Price: ${{ item.product.price }}</p>
+          {% if item.product.product_images %}
+            {% for image in item.product.product_images %}
+              <img src="{{ supabase.storage.from_('product-images').get_public_url(image.image_path) }}" alt="{{ item.product.title }}" class="w-full h-48 object-cover">
+            {% endfor %}
+          {% else %}
+            <p>No images available</p>
+          {% endif %}
+          <form method="POST" action="{{ url_for('remove_from_cart', id=item.id) }}" class="mt-2">
+            <button type="submit" class="bg-red-500 text-white p-2 rounded">Remove from Cart</button>
+          </form>
+        </div>
+      {% endfor %}
     </div>
+  {% else %}
+    <p>Your cart is empty.</p>
+  {% endif %}
 </div>
 {% endblock %}
