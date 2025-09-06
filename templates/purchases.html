@@ -6,14 +6,14 @@
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         {% for purchase in purchases %}
             <div class="bg-white p-4 rounded-lg shadow-md">
-                {% if purchase.product.images %}
-                    <img src="{{ url_for('static', filename=purchase.product.images[0].image_path) }}" alt="Product Image" class="w-full h-40 object-cover mb-2 rounded">
+                {% if purchase.product.product_images %}
+                    <img src="{{ supabase.storage.from_('product-images').get_public_url(purchase.product.product_images[0].image_path) }}" alt="Product Image" class="w-full h-40 object-cover mb-2 rounded">
                 {% else %}
-                    <img src="{{ url_for('static', filename='uploads/products/placeholder.jpg') }}" alt="Placeholder" class="w-full h-40 object-cover mb-2 rounded">
+                    <img src="{{ supabase.storage.from_('product-images').get_public_url('placeholder.jpg') }}" alt="Placeholder" class="w-full h-40 object-cover mb-2 rounded">
                 {% endif %}
                 <h3 class="text-lg font-bold">{{ purchase.product.title }}</h3>
                 <p class="text-gray-600">${{ purchase.product.price }}</p>
-                <p class="text-gray-600">Purchased on {{ purchase.purchased_at.strftime('%Y-%m-%d') }}</p>
+                <p class="text-gray-600">Purchased on {{ purchase.purchased_at }}</p>
             </div>
         {% endfor %}
     </div>

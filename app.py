@@ -1,71 +1,23 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash, check_password_hash
+from supabase import create_client, Client
 from werkzeug.utils import secure_filename
 import os
-from datetime import datetime
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///ecofinds.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER_USERS'] = 'static/uploads/users'
-app.config['UPLOAD_FOLDER_PRODUCTS'] = 'static/uploads/products'
-app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg'}
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-db = SQLAlchemy(app)
-
-# Ensure upload folders exist
-os.makedirs(app.config['UPLOAD_FOLDER_USERS'], exist_ok=True)
-os.makedirs(app.config['UPLOAD_FOLDER_PRODUCTS'], exist_ok=True)
+load_dotenv()
+supabase_url = os.getenv('SUPABASE_URL')
+supabase_key = os.getenv('SUPABASE_KEY')
+supabase: Client = create_client(supabase_url, supabase_key)
 
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg'}
 
-# Database Models
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=False)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    image = db.Column(db.String(200), default='user_image.jpg')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-class Product(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(100), nullable=False)
-    description = db.Column(db.Text, nullable=False)
-    category = db.Column(db.String(50), nullable=False)
-    price = db.Column(db.Float, nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    user = db.relationship('User', backref=db.backref('products', lazy=True))
-    images = db.relationship('ProductImage', backref='product', lazy=True, cascade='all, delete-orphan')
-
-class ProductImage(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
-    image_path = db.Column(db.String(200), nullable=False)
-
-class Purchase(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
-    purchased_at = db.Column(db.DateTime, default=datetime.utcnow)
-    user = db.relationship('User', backref=db.backref('purchases', lazy=True))
-    product = db.relationship('Product', backref=db.backref('purchases', lazy=True))
-
-class Cart(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
-    added_at = db.Column(db.DateTime, default=datetime.utcnow)
-    user = db.relationship('User', backref=db.backref('cart_items', lazy=True))
-    product = db.relationship('Product', backref=db.backref('cart_items', lazy=True))
-
-# Create database
-with app.app_context():
-    db.create_all()
+# Inject supabase client into Jinja2 templates
+@app.context_processor
+def inject_supabase():
+    return dict(supabase=supabase)
 
 # Routes
 @app.route('/')
@@ -79,19 +31,36 @@ def register():
         password = request.form['password']
         username = request.form['username']
         
-        if User.query.filter_by(email=email).first() or User.query.filter_by(username=username).first():
-            flash('Email or username already exists')
+        try:
+            # Register user with Supabase Auth
+            response = supabase.auth.sign_up({
+                'email': email,
+                'password': password
+            })
+            user = response.user
+            
+            # Sign in the user to set the session for RLS
+            supabase.auth.sign_in_with_password({
+                'email': email,
+                'password': password
+            })
+            
+            # Create profile in public.profiles
+            supabase.table('profiles').insert({
+                'id': user.id,
+                'username': username,
+                'email': email,
+                'image': 'user_image.jpg'
+            }).execute()
+            
+            # Set session for Flask
+            session['user_id'] = user.id
+            session['username'] = username
+            flash('Registration successful!')
+            return redirect(url_for('dashboard'))
+        except Exception as e:
+            flash(f'Registration failed: {str(e)}')
             return redirect(url_for('register'))
-        
-        user = User(
-            email=email,
-            password_hash=generate_password_hash(password),
-            username=username
-        )
-        db.session.add(user)
-        db.session.commit()
-        flash('Registration successful! Please log in.')
-        return redirect(url_for('login'))
     
     return render_template('register.html')
 
@@ -100,18 +69,23 @@ def login():
     if request.method == 'POST':
         email = request.form['email']
         password = request.form['password']
-        user = User.query.filter_by(email=email).first()
         
-        if user and check_password_hash(user.password_hash, password):
-            session['user_id'] = user.id
-            session['username'] = user.username
+        try:
+            response = supabase.auth.sign_in_with_password({
+                'email': email,
+                'password': password
+            })
+            session['user_id'] = response.user.id
+            session['username'] = response.user.user_metadata.get('username', '')
             return redirect(url_for('dashboard'))
-        flash('Invalid email or password')
+        except Exception as e:
+            flash('Invalid email or password')
     
     return render_template('login.html')
 
 @app.route('/logout')
 def logout():
+    supabase.auth.sign_out()
     session.pop('user_id', None)
     session.pop('username', None)
     return redirect(url_for('login'))
@@ -121,36 +95,40 @@ def dashboard():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    user = User.query.get(session['user_id'])
-    return render_template('dashboard.html', user=user)
+    user_data = supabase.table('profiles').select('*').eq('id', session['user_id']).single().execute().data
+    products = supabase.table('products').select('*, product_images(image_path)').eq('user_id', session['user_id']).execute().data
+    return render_template('dashboard.html', user=user_data, products=products)
 
 @app.route('/profile', methods=['GET', 'POST'])
 def profile():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    user = User.query.get(session['user_id'])
+    user_data = supabase.table('profiles').select('*').eq('id', session['user_id']).single().execute().data
     if request.method == 'POST':
-        user.username = request.form['username']
-        user.email = request.form['email']
-        if request.form['password']:
-            user.password_hash = generate_password_hash(request.form['password'])
+        username = request.form['username']
+        email = request.form['email']
         
+        # Update profile
+        update_data = {'username': username, 'email': email}
+        
+        # Handle profile image upload
         if 'image' in request.files:
             file = request.files['image']
             if file and allowed_file(file.filename):
                 filename = secure_filename(file.filename)
-                file_path = os.path.join(app.config['UPLOAD_FOLDER_USERS'], filename)
-                file.save(file_path)
-                user.image = f'uploads/users/{filename}'
+                file_content = file.read()
+                supabase.storage.from_('user-images').upload(f'{session["user_id"]}/{filename}', file_content)
+                update_data['image'] = f'{session["user_id"]}/{filename}'
             elif file.filename:
                 flash('Invalid file type. Please upload PNG, JPG, or JPEG.')
         
-        db.session.commit()
+        supabase.table('profiles').update(update_data).eq('id', session['user_id']).execute()
+        session['username'] = username
         flash('Profile updated successfully')
         return redirect(url_for('dashboard'))
     
-    return render_template('profile.html', user=user)
+    return render_template('profile.html', user=user_data)
 
 @app.route('/products/new', methods=['GET', 'POST'])
 def new_product():
@@ -169,24 +147,27 @@ def new_product():
             flash('Maximum 10 images allowed.')
             return redirect(url_for('new_product'))
         
-        product = Product(
-            title=request.form['title'],
-            description=request.form['description'],
-            category=request.form['category'],
-            price=float(request.form['price']),
-            user_id=session['user_id']
-        )
-        db.session.add(product)
-        db.session.flush()  # Get product ID before committing
+        # Create product
+        product_data = {
+            'title': request.form['title'],
+            'description': request.form['description'],
+            'category': request.form['category'],
+            'price': float(request.form['price']),
+            'user_id': session['user_id']
+        }
+        product_response = supabase.table('products').insert(product_data).execute()
+        product_id = product_response.data[0]['id']
         
+        # Upload images to Supabase Storage
         for file in valid_files:
             filename = secure_filename(file.filename)
-            file_path = os.path.join(app.config['UPLOAD_FOLDER_PRODUCTS'], filename)
-            file.save(file_path)
-            product_image = ProductImage(product_id=product.id, image_path=f'uploads/products/{filename}')
-            db.session.add(product_image)
+            file_content = file.read()
+            supabase.storage.from_('product-images').upload(f'{product_id}/{filename}', file_content)
+            supabase.table('product_images').insert({
+                'product_id': product_id,
+                'image_path': f'{product_id}/{filename}'
+            }).execute()
         
-        db.session.commit()
         flash('Product listed successfully')
         return redirect(url_for('dashboard'))
     
@@ -197,33 +178,31 @@ def edit_product(id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    product = Product.query.get_or_404(id)
-    if product.user_id != session['user_id']:
+    product = supabase.table('products').select('*, product_images(image_path)').eq('id', id).single().execute().data
+    if not product or product['user_id'] != session['user_id']:
         flash('Unauthorized')
         return redirect(url_for('dashboard'))
     
     categories = ['Electronics', 'Clothing', 'Furniture', 'Books', 'Other']
     if request.method == 'POST':
-        product.title = request.form['title']
-        product.description = request.form['description']
-        product.category = request.form['category']
-        product.price = float(request.form['price'])
+        # Update product
+        supabase.table('products').update({
+            'title': request.form['title'],
+            'description': request.form['description'],
+            'category': request.form['category'],
+            'price': float(request.form['price'])
+        }).eq('id', id).execute()
         
         # Handle image deletions
         delete_images = request.form.getlist('delete_images')
-        for image_id in delete_images:
-            image = ProductImage.query.get(image_id)
-            if image and image.product_id == product.id:
-                try:
-                    os.remove(os.path.join(app.root_path, app.config['UPLOAD_FOLDER_PRODUCTS'], os.path.basename(image.image_path)))
-                except FileNotFoundError:
-                    pass
-                db.session.delete(image)
+        for image_path in delete_images:
+            supabase.storage.from_('product-images').remove([image_path])
+            supabase.table('product_images').delete().eq('image_path', image_path).execute()
         
         # Handle new image uploads
         files = request.files.getlist('images')
         valid_files = [f for f in files if f and allowed_file(f.filename)]
-        current_image_count = len(product.images) - len(delete_images)
+        current_image_count = len(product['product_images']) - len(delete_images)
         
         if current_image_count + len(valid_files) < 1:
             flash('At least one image is required.')
@@ -234,12 +213,13 @@ def edit_product(id):
         
         for file in valid_files:
             filename = secure_filename(file.filename)
-            file_path = os.path.join(app.config['UPLOAD_FOLDER_PRODUCTS'], filename)
-            file.save(file_path)
-            product_image = ProductImage(product_id=product.id, image_path=f'uploads/products/{filename}')
-            db.session.add(product_image)
+            file_content = file.read()
+            supabase.storage.from_('product-images').upload(f'{id}/{filename}', file_content)
+            supabase.table('product_images').insert({
+                'product_id': id,
+                'image_path': f'{id}/{filename}'
+            }).execute()
         
-        db.session.commit()
         flash('Product updated successfully')
         return redirect(url_for('dashboard'))
     
@@ -250,20 +230,17 @@ def delete_product(id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    product = Product.query.get_or_404(id)
-    if product.user_id != session['user_id']:
+    product = supabase.table('products').select('*, product_images(image_path)').eq('id', id).single().execute().data
+    if not product or product['user_id'] != session['user_id']:
         flash('Unauthorized')
         return redirect(url_for('dashboard'))
     
-    # Delete associated images from filesystem
-    for image in product.images:
-        try:
-            os.remove(os.path.join(app.root_path, app.config['UPLOAD_FOLDER_PRODUCTS'], os.path.basename(image.image_path)))
-        except FileNotFoundError:
-            pass
+    # Delete images from storage
+    for image in product['product_images']:
+        supabase.storage.from_('product-images').remove([image['image_path']])
     
-    db.session.delete(product)
-    db.session.commit()
+    # Delete product (cascades to product_images)
+    supabase.table('products').delete().eq('id', id).execute()
     flash('Product deleted successfully')
     return redirect(url_for('dashboard'))
 
@@ -272,19 +249,22 @@ def browse_products():
     category = request.args.get('category')
     search = request.args.get('search')
     
-    query = Product.query
+    query = supabase.table('products').select('*, product_images(image_path)')
     if category:
-        query = query.filter_by(category=category)
+        query = query.eq('category', category)
     if search:
-        query = query.filter(Product.title.ilike(f'%{search}%'))
+        query = query.ilike('title', f'%{search}%')
     
-    products = query.all()
+    products = query.execute().data
     categories = ['Electronics', 'Clothing', 'Furniture', 'Books', 'Other']
     return render_template('browse_products.html', products=products, categories=categories)
 
 @app.route('/products/<int:id>')
 def product_detail(id):
-    product = Product.query.get_or_404(id)
+    product = supabase.table('products').select('*, product_images(image_path)').eq('id', id).single().execute().data
+    if not product:
+        flash('Product not found')
+        return redirect(url_for('browse_products'))
     return render_template('product_detail.html', product=product)
 
 @app.route('/purchases')
@@ -292,7 +272,7 @@ def purchases():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    purchases = Purchase.query.filter_by(user_id=session['user_id']).all()
+    purchases = supabase.table('purchases').select('*, product:products(*, product_images(image_path))').eq('user_id', session['user_id']).execute().data
     return render_template('purchases.html', purchases=purchases)
 
 @app.route('/cart')
@@ -300,7 +280,7 @@ def cart():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    cart_items = Cart.query.filter_by(user_id=session['user_id']).all()
+    cart_items = supabase.table('cart').select('*, product:products(*, product_images(image_path))').eq('user_id', session['user_id']).execute().data
     return render_template('cart.html', cart_items=cart_items)
 
 @app.route('/cart/add/<int:product_id>', methods=['POST'])
@@ -308,9 +288,10 @@ def add_to_cart(product_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    cart_item = Cart(user_id=session['user_id'], product_id=product_id)
-    db.session.add(cart_item)
-    db.session.commit()
+    supabase.table('cart').insert({
+        'user_id': session['user_id'],
+        'product_id': product_id
+    }).execute()
     flash('Product added to cart')
     return redirect(url_for('browse_products'))
 
@@ -319,13 +300,12 @@ def remove_from_cart(id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    cart_item = Cart.query.get_or_404(id)
-    if cart_item.user_id != session['user_id']:
+    cart_item = supabase.table('cart').select('*').eq('id', id).single().execute().data
+    if not cart_item or cart_item['user_id'] != session['user_id']:
         flash('Unauthorized')
         return redirect(url_for('cart'))
     
-    db.session.delete(cart_item)
-    db.session.commit()
+    supabase.table('cart').delete().eq('id', id).execute()
     flash('Product removed from cart')
     return redirect(url_for('cart'))
 
@@ -334,9 +314,10 @@ def purchase_product(product_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    purchase = Purchase(user_id=session['user_id'], product_id=product_id)
-    db.session.add(purchase)
-    db.session.commit()
+    supabase.table('purchases').insert({
+        'user_id': session['user_id'],
+        'product_id': product_id
+    }).execute()
     flash('Product purchased successfully')
     return redirect(url_for('purchases'))
 

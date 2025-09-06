@@ -4,14 +4,14 @@
 <div class="max-w-2xl mx-auto bg-white p-6 rounded-lg shadow-md">
     <h1 class="text-2xl font-bold mb-2">{{ product.title }}</h1>
     <div class="mb-4">
-        {% if product.images %}
+        {% if product.product_images %}
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {% for image in product.images %}
-                    <img src="{{ url_for('static', filename=image.image_path) }}" alt="Product Image" class="w-full h-64 object-cover rounded">
+                {% for image in product.product_images %}
+                    <img src="{{ supabase.storage.from_('product-images').get_public_url(image.image_path) }}" alt="Product Image" class="w-full h-64 object-cover rounded">
                 {% endfor %}
             </div>
         {% else %}
-            <img src="{{ url_for('static', filename='uploads/products/placeholder.jpg') }}" alt="Placeholder" class="w-full h-64 object-cover rounded mb-4">
+            <img src="{{ supabase.storage.from_('product-images').get_public_url('placeholder.jpg') }}" alt="Placeholder" class="w-full h-64 object-cover rounded mb-4">
         {% endif %}
     </div>
     <p class="text-gray-600 mb-2">Price: ${{ product.price }}</p>

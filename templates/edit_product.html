@@ -6,12 +6,12 @@
     <form method="POST" enctype="multipart/form-data">
         <div class="mb-4">
             <label class="block text-gray-700">Current Images</label>
-            {% if product.images %}
+            {% if product.product_images %}
                 <div class="grid grid-cols-3 gap-2 mb-2">
-                    {% for image in product.images %}
+                    {% for image in product.product_images %}
                         <div class="relative">
-                            <img src="{{ url_for('static', filename=image.image_path) }}" alt="Product Image" class="w-full h-24 object-cover rounded">
-                            <input type="checkbox" name="delete_images" value="{{ image.id }}" class="absolute top-1 right-1">
+                            <img src="{{ supabase.storage.from_('product-images').get_public_url(image.image_path) }}" alt="Product Image" class="w-full h-24 object-cover rounded">
+                            <input type="checkbox" name="delete_images" value="{{ image.image_path }}" class="absolute top-1 right-1">
                             <label class="text-sm text-gray-600">Delete</label>
                         </div>
                     {% endfor %}
